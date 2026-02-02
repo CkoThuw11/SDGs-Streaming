@@ -1,0 +1,15 @@
+{
+    "name": "sdg-connector",
+    "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "tasks.max": "1",
+        "database.hostname": "postgres",
+        "database.port": "5432",
+        "database.user": "user",
+        "database.password": "password",
+        "database.dbname": "sdg_streaming",
+        "topic.prefix": "sdg",
+        "table.include.list": "public.co2_measurements",
+        "plugin.name": "pgoutput"
+    }
+}

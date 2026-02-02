@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sdg_streaming
+    ports:
+      - "5432:5432"
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=5", "-c", "max_wal_senders=5"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d sdg_streaming"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sdg_net
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sdg_net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sdg_net
+
+  debezium:
+    image: quay.io/debezium/connect:2.5
+    container_name: debezium
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - sdg_net
+
+  data-generator:
+    build: ./generator
+    container_name: data-generator
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=sdg_streaming
+      - DB_USER=user
+      - DB_PASSWORD=password
+    networks:
+      - sdg_net
+
+  flink-jobmanager:
+    build: ./flink_job
+    container_name: flink-jobmanager
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        restart-strategy: fixed-delay
+        restart-strategy.fixed-delay.attempts: 3
+        restart-strategy.fixed-delay.delay: 10s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - sdg_net
+
+  flink-taskmanager:
+    build: ./flink_job
+    container_name: flink-taskmanager
+    restart: unless-stopped
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    command: taskmanager
+    scale: 1
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+    networks:
+      - sdg_net
+
+networks:
+  sdg_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
