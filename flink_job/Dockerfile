@@ -12,10 +12,13 @@ COPY requirements.txt /opt/flink/
 RUN pip3 install --upgrade pip && \
     pip3 install --no-cache-dir -r /opt/flink/requirements.txt
 
-# Download Flink Kafka Connector and JSON format
+# Download Flink Kafka Connector, JSON format, and JDBC Connector + Postgres Driver
 RUN wget -P /opt/flink/lib/ \
     https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.0.2-1.18/flink-sql-connector-kafka-3.0.2-1.18.jar \
-    https://repo.maven.apache.org/maven2/org/apache/flink/flink-json/1.18.0/flink-json-1.18.0.jar
+    https://repo.maven.apache.org/maven2/org/apache/flink/flink-json/1.18.0/flink-json-1.18.0.jar \
+    https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-jdbc/3.1.2-1.18/flink-connector-jdbc-3.1.2-1.18.jar \
+    https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.2/postgresql-42.7.2.jar
+
 
 WORKDIR /opt/flink/usrlib
 COPY processor.py .

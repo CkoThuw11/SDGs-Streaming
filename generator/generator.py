@@ -96,7 +96,7 @@ class DataGenerator:
                 logger.debug(f"Inserted reading: {data}")
                 
                 # Configurable delay
-                time.sleep(random.uniform(0.5, 2.0))
+                time.sleep(random.uniform(10, 15))
 
             except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                 logger.error(f"Database connection lost: {e}. Reconnecting...")

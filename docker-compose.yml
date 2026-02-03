@@ -117,7 +117,7 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
-        restart-strategy: fixed-delay
+        restart-str====ategy: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10s
     healthcheck:

@@ -5,16 +5,16 @@ Real-time CO₂ anomaly detection pipeline using Change Data Capture (CDC).
 ## Architecture
 
 ```
-PostgreSQL → Debezium → Kafka → Apache Flink → Print Sink
+PostgreSQL (Source) → Debezium → Kafka → Apache Flink → PostgreSQL (Sink) → Power BI
 ```
 
 | Component | Purpose |
 |-----------|---------|
-| **PostgreSQL** | Source database with CO₂ measurements |
-| **Debezium** | Captures database changes via CDC |
+| **PostgreSQL** | Source of Truth & Analytics Storage |
+| **Debezium** | Captures database changes (`co2_measurements`) |
 | **Kafka** | Event streaming platform |
-| **Flink** | Real-time stream processing |
-| **Data Generator** | Simulates sensor readings |
+| **Flink** | Real-time stream processing & Aggregation |
+| **Power BI** | Real-time Dashboards & Historical Reporting |
 
 ## Quick Start
 
@@ -22,14 +22,11 @@ PostgreSQL → Debezium → Kafka → Apache Flink → Print Sink
 # Start all services
 docker-compose up -d --build
 
-# Wait ~60 seconds, then register Debezium connector
+# Wait ~15 seconds for Debezium to be ready, then register connector
 bash register_connector.sh
 
 # Submit Flink job
 docker exec -it flink-jobmanager /opt/flink/bin/flink run -py /opt/flink/usrlib/processor.py
-
-# View real-time output
-docker logs flink-taskmanager -f | grep -E "\+I\[|status"
 ```
 
 ## Project Structure
@@ -37,10 +34,9 @@ docker logs flink-taskmanager -f | grep -E "\+I\[|status"
 ```
 SDGStreaming/
 ├── docker-compose.yml      # Service orchestration
-├── init.sql                # Database schema
+├── init.sql                # Database schema (Tables + Stats Views)
 ├── debezium-connector.json # CDC configuration
 ├── register_connector.sh   # Connector setup script
-├── testing_guide.md        # Detailed testing instructions
 ├── flink_job/
 │   ├── Dockerfile          # Flink image with PyFlink
 │   ├── processor.py        # Stream processing logic
@@ -50,13 +46,29 @@ SDGStreaming/
     └── generator.py        # Synthetic data generator
 ```
 
+## Data Pipeline & Visualization
+
+The system processes raw sensor data into three specific layers for visualization:
+
+1.  **Real-Time Status** (`current_co2_status`):
+    *   **Logic**: Deduplicated "Upsert" stream.
+    *   **Use Case**: Live Gauge Charts (Latest value per sensor).
+    
+2.  **Hourly Trends** (`co2_hourly_aggregates`):
+    *   **Logic**: 1-hour tumbling window aggregation.
+    *   **Use Case**: Bar Charts (Hourly Comparison across locations).
+
+3.  **Analytics Views** (`sensor_stats_24h`, `daily_patterns`):
+    *   **Logic**: SQL Views calculating rolling 24h averages and spatial heatmaps.
+    *   **Use Case**: Line Charts (Trend vs Baseline) & Heat Maps.
+
 ## Anomaly Detection Logic
 
-| CO₂ Level (ppm) | Status |
-|-----------------|--------|
-| > 420 | High Warning |
-| > 400 | Warning |
-| ≤ 400 | Normal |
+| CO₂ Level (ppm) | Status | Alert Action |
+|-----------------|--------|--------------|
+| > 420 | **CRITICAL** | Log to `co2_alerts` |
+| > 400 | **WARNING** | Log to `co2_alerts` |
+| ≤ 400 | **NORMAL** | Ignored |
 
 ## Useful Commands
 
@@ -74,11 +86,17 @@ docker exec flink-jobmanager /opt/flink/bin/flink list
 docker compose down -v
 ```
 
-## Requirements
+## Power BI Setup
 
-- Docker & Docker Compose
-- ~4GB RAM for all containers
+This guide details how to connect Power BI to the PostgreSQL database for visualization.
 
-## License
+## Database Connection
 
-MIT
+1.  **Get Data**: Open Power BI Desktop -> Home -> Get Data -> PostgreSQL database.
+2.  **Server**: `localhost` (or your Docker host IP).
+3.  **Port**: `5432` (Ensure port mapping `-p 5432:5432` is active in `docker-compose.yml`).
+4.  **Database**: `sdg_streaming`.
+5.  **Authentication**:
+    *   **User**: `user`
+    *   **Password**: `password` (Default from `docker-compose`)
+6.  **Import Mode**: Select **DirectQuery** for real-time dashboards (Gauge, Alerts) or **Import** for historical analysis (Heat Map, Bar Charts). DirectQuery is recommended for live monitoring.
